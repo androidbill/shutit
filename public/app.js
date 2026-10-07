@@ -489,7 +489,7 @@ function scheduleBot() {
     const move = pickBotMove(soloState, pid, soloMode.difficulty);
     try { soloState = applyMove(soloState, pid, move); } catch { /* skip */ }
     renderSoloGame(); scheduleBot();
-  }, soloState.phase === 'roll' ? 1100 : 900);
+  }, soloState.phase === 'roll' ? 900 : 2300);
 }
 function renderSoloGame() {
   renderGameCommon(soloState, soloNames, 'you');
@@ -513,6 +513,46 @@ function resumeSolo() {
 
 // ================================================================== GAME RENDERING (shared)
 const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+// The throw: two big dice fly in from the edges, spin through random faces, and zoom down onto
+// their numbers. Until they land the result stays hidden everywhere (see `rolling` below).
+const ROLL_MS = 1500;
+const ROLL_HOLD_MS = 450;
+let rollAnimUntil = 0;
+let rollAnimTimer = null;
+function playRollAnim(dice, colorIdx) {
+  const old = document.getElementById('roll-overlay'); if (old) old.remove();
+  const ov = document.createElement('div');
+  ov.id = 'roll-overlay'; ov.className = 'roll-overlay';
+  ov.innerHTML = '<div class="big-die-wrap"></div><div class="big-die-wrap"></div>';
+  document.body.appendChild(ov);
+  const w = Math.min(window.innerWidth, 520);
+  ov.querySelectorAll('.big-die-wrap').forEach((wrap, i) => {
+    const set = (v) => { wrap.innerHTML = dieHtml(v, colorIdx); };
+    set(1 + Math.floor(Math.random() * 6));
+    const dir = i === 0 ? -1 : 1;
+    wrap.animate([
+      { transform: `translate(${dir * w * 0.9}px, ${-window.innerHeight * 0.35}px) scale(3.4) rotate(${dir * -540}deg)`, opacity: 0 },
+      { opacity: 1, offset: 0.12 },
+      { transform: `translate(${dir * -6}px, 24px) scale(2.3) rotate(${dir * 40}deg)`, offset: 0.7 },
+      { transform: 'translate(0, 0) scale(1.9) rotate(0deg)', opacity: 1 },
+    ], { duration: ROLL_MS, easing: 'cubic-bezier(.2,.75,.3,1)', fill: 'forwards' });
+    // faces change quickly at first, then slow to a stop on the real value
+    let t = 0; let gap = 60;
+    (function tick() {
+      t += gap; gap *= 1.16;
+      if (t < ROLL_MS - 120) { set(1 + Math.floor(Math.random() * 6)); setTimeout(tick, gap); }
+      else set(dice[i]);
+    })();
+  });
+  rollAnimUntil = Date.now() + ROLL_MS + ROLL_HOLD_MS;
+  clearTimeout(rollAnimTimer);
+  rollAnimTimer = setTimeout(() => {
+    ov.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, fill: 'forwards' }).onfinish = () => ov.remove();
+    if (lastRender) renderGameCommon(lastRender.game, lastRender.names, lastRender.myId);
+  }, ROLL_MS + ROLL_HOLD_MS);
+  return ROLL_MS + ROLL_HOLD_MS;
+}
+
 function dieHtml(v, colorIdx, tumble) {
   const on = new Set(PIPS[v] || []);
   return `<div class="die${tumble ? ' tumble' : ''}" style="${pillStyle(colorIdx)}">${Array.from({ length: 9 }, (_, i) => `<i${on.has(i) ? ' class="on"' : ''}></i>`).join('')}</div>`;
@@ -527,6 +567,7 @@ let endRevealAt = 0;
 let endTimer = null;
 
 function resetFx() {
+  rollAnimUntil = 0; clearTimeout(rollAnimTimer); document.getElementById('roll-overlay')?.remove();
   fx = { ready: false, rollKey: null, turnPid: null, shoutKey: null, prevTiles: {}, wasMyTurn: false };
   sel = new Set(); selKey = ''; endKey = null; clearTimeout(endTimer);
   hide($('round-end-panel')); hide($('gameover-panel'));
@@ -549,15 +590,18 @@ function renderGameCommon(game, names, myId) {
   const myCol = names[myId]?.color ?? myColor;
   const nameOf = (pid) => (pid === myId ? 'You' : (names[pid]?.name || '?'));
   const first = !fx.ready;
+  let rolling = Date.now() < rollAnimUntil; // dice still in the air: hide the outcome
 
   // ---- sync of one-shot effects (sounds, shoutouts) — never on the first paint
   const rollKey = game.lastRoll ? `${game.round}:${game.rollId}` : `${game.round}:0`;
   const newRoll = rollKey !== fx.rollKey;
   if (!first && newRoll && game.lastRoll) {
     sndRoll();
+    const wait = playRollAnim(game.lastRoll.dice, names[game.lastRoll.pid]?.color ?? 0);
+    rolling = true;
     if (game.lastRoll.stuck) {
-      setTimeout(sndStuck, 650);
-      shoutout(`${nameOf(game.lastRoll.pid)} ${game.lastRoll.pid === myId ? 'are' : 'is'} stuck!`, colorOf(names[game.lastRoll.pid]?.color).hex, { duration: 1800 });
+      setTimeout(sndStuck, wait);
+      setTimeout(() => shoutout(`${nameOf(game.lastRoll.pid)} ${game.lastRoll.pid === myId ? 'are' : 'is'} stuck!`, colorOf(names[game.lastRoll.pid]?.color).hex, { duration: 1800 }), wait);
     }
   }
   if (!first && game.shutBy && fx.shoutKey !== `shut:${game.round}`) {
@@ -595,7 +639,9 @@ function renderGameCommon(game, names, myId) {
   // ---- dice tray + caption
   const tray = $('dice-tray');
   let dice = null; let diceOwner = curPid; let dim = false; let caption = '';
-  if (game.phase === 'pick' && game.dice) {
+  if (rolling) {
+    dice = null;
+  } else if (game.phase === 'pick' && game.dice) {
     dice = game.dice; diceOwner = curPid;
     caption = `${nameOf(curPid)} rolled <b>${dice[0] + dice[1]}</b>`;
   } else if (game.lastRoll) {
@@ -607,7 +653,7 @@ function renderGameCommon(game, names, myId) {
   const ownerColor = names[diceOwner]?.color ?? 0;
   tray.className = `dice-tray${dim ? ' dim' : ''}${dice ? '' : ' empty'}`;
   tray.innerHTML = dice
-    ? dieHtml(dice[0], ownerColor, newRoll && !first) + dieHtml(dice[1], ownerColor, newRoll && !first)
+    ? dieHtml(dice[0], ownerColor, false) + dieHtml(dice[1], ownerColor, false)
     : '<div class="die"></div><div class="die"></div>';
   $('dice-caption').innerHTML = caption;
   fx.rollKey = rollKey;
@@ -620,14 +666,15 @@ function renderGameCommon(game, names, myId) {
   rollBtn.textContent = '🎲 Roll';
   rollBtn.onclick = () => { if (canRoll) sendMove({ type: 'roll' }); };
   let prompt = '';
-  if (isMyTurn && game.phase === 'roll') prompt = 'Your turn — roll the dice';
+  if (rolling) prompt = 'Rolling…';
+  else if (isMyTurn && game.phase === 'roll') prompt = 'Your turn — roll the dice';
   else if (isMyTurn) prompt = `Pick tiles that add up to ${game.dice[0] + game.dice[1]}`;
   else if (live) prompt = `Waiting on ${nameOf(curPid)}…`;
   if (live && me?.out && !isMyTurn) prompt = `You're out this round — waiting on ${nameOf(curPid)}`;
   $('act-prompt').textContent = prompt;
 
   // ---- my board
-  const total = isMyTurn && game.phase === 'pick' ? game.dice[0] + game.dice[1] : 0;
+  const total = isMyTurn && game.phase === 'pick' && !rolling ? game.dice[0] + game.dice[1] : 0;
   const usable = new Set();
   if (total) for (const c of combosFor(me.tiles, total)) for (const t of c) usable.add(t);
   const board = $('my-board');

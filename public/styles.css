@@ -282,3 +282,12 @@ select option { color: #1a1a1a; background: #fff; }
 .score-row .sr-round { font-variant-numeric: tabular-nums; color: var(--muted); }
 .score-row .sr-total { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 1.2em; min-width: 2ch; text-align: right; }
 .score-head { display: grid; grid-template-columns: 1fr auto auto; gap: 14px; padding: 0 14px; color: var(--muted); font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* the dice throw */
+.roll-overlay {
+  position: fixed; inset: 0; z-index: 150; pointer-events: none;
+  display: flex; justify-content: center; align-items: center; gap: 56px;
+  background: radial-gradient(circle at 50% 45%, rgba(0,0,0,0.55), rgba(0,0,0,0.25) 70%);
+  padding-bottom: 8vh;
+}
+.big-die-wrap { will-change: transform; filter: drop-shadow(0 14px 18px rgba(0,0,0,0.55)); }
