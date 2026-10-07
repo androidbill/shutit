@@ -1,0 +1,13 @@
+{
+  "name": "shutit",
+  "version": "1.0.0",
+  "description": "Shut It — shut-the-box (tiles 1-12) as an online multiplayer PWA",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/engine-tests.mjs"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.5"
+  }
+}

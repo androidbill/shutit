@@ -1,0 +1,5 @@
+{
+  "dice": { "file": "dice-v2.mp3", "gain": 1, "room": 0 },
+  "road": { "file": "road-v2.mp3", "gain": 1, "room": 0 },
+  "yourTurn": { "file": "your-turn-notifv2.mp3", "gain": 1, "room": 0 }
+}
