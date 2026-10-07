@@ -30,6 +30,4 @@ jobs:
           VERSION=$(grep -oE "APP_VERSION = '[^']+'" public/version.js | grep -oE "[0-9][0-9.]+")
           echo "publishing $VERSION"
           printf '"%s"' "$VERSION" > version.json
-          curl -sS -X PUT --data @version.json -w '
-rtdb: %{http_code}
-' "https://shut-it-4172-default-rtdb.firebaseio.com/meta/version.json"
+          curl -sS -X PUT --data @version.json -w 'rtdb: %{http_code}' "https://shut-it-4172-default-rtdb.firebaseio.com/meta/version.json"
