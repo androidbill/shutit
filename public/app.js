@@ -118,24 +118,56 @@ $('btn-install').addEventListener('click', async () => {
   deferredInstallPrompt = null; hide($('install-banner'));
 });
 
-// ---------------------------------------------------------------- version check
+// ---------------------------------------------------------------- update notification
+// Three independent routes, because polling alone leaves installed phones on old builds:
+//   1. meta/version in the database — the deploy writes it, every open client watches it
+//   2. the service worker — a new worker installing/activating means a new build landed
+//   3. a no-store poll of version.js, on load, on resume and every 2 minutes
+// All of them funnel into announceUpdate(). Versions are zero-padded, so string compare orders them.
 let updateBannerShown = false;
+function announceUpdate(why) {
+  if (updateBannerShown) return;
+  updateBannerShown = true;
+  console.info('Shut It: update available via', why);
+  show($('update-banner'));
+}
 async function checkVersion() {
   if (updateBannerShown) return;
   try {
     const res = await fetch(`version.js?t=${Date.now()}`, { cache: 'no-store' });
-    const m = (await res.text()).match(/APP_VERSION\s*=\s*'([^']+)'/);
-    if (m && m[1] !== APP_VERSION) { updateBannerShown = true; show($('update-banner')); }
+    const m = (await res.text()).match(/APP_VERSIONs*=s*'([^']+)'/);
+    if (m && m[1] !== APP_VERSION) announceUpdate('version.js');
   } catch { /* offline */ }
 }
 checkVersion();
+// The app never writes this — only the deploy does — so an old client cannot announce itself as newest.
+onValue(ref(db, 'meta/version'), (snap) => {
+  const v = snap.val();
+  if (typeof v === 'string' && v > APP_VERSION) announceUpdate('database');
+}, () => { /* unreadable: the other routes still cover it */ });
 let lastVersionCheck = Date.now();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && Date.now() - lastVersionCheck > 60000) { lastVersionCheck = Date.now(); checkVersion(); }
 });
 setInterval(() => { lastVersionCheck = Date.now(); checkVersion(); }, 2 * 60 * 1000);
-$('update-refresh').addEventListener('click', () => { $('update-refresh').textContent = 'Updating…'; hardRefresh(); });
-if ('serviceWorker' in navigator) navigator.serviceWorker.register(`sw.js?v=${APP_VERSION}`).catch(() => {});
+$('update-refresh').addEventListener('click', () => { $('update-refresh').textContent = 'Updating…'; toast('Updating…'); hardRefresh(); });
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register(`sw.js?v=${APP_VERSION}`).then((reg) => {
+    reg.addEventListener('updatefound', () => {
+      const sw = reg.installing; if (!sw) return;
+      sw.addEventListener('statechange', () => {
+        if (sw.state === 'installed' && navigator.serviceWorker.controller) announceUpdate('service worker');
+      });
+    });
+    const poke = () => reg.update().catch(() => {});
+    setInterval(poke, 60000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poke(); });
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data?.type === 'NEW_VERSION' && e.data.version !== APP_VERSION) announceUpdate('worker message');
+  });
+}
 
 // ================================================================== ROOM / ONLINE STATE
 let currentRoomCode = null;

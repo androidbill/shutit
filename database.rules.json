@@ -12,6 +12,13 @@
         ".read": true,
         ".write": true
       }
+    },
+    "meta": {
+      "version": {
+        ".read": true,
+        ".write": true,
+        ".validate": "newData.isString() && newData.val().length < 20"
+      }
     }
   }
 }

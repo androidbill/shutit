@@ -16,6 +16,8 @@ self.addEventListener('activate', (e) => {
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: 'window' }))
+      .then((clients) => clients.forEach((c) => c.postMessage({ type: 'NEW_VERSION', version: VERSION })))
   );
 });
 // Network-first for same-origin (always fresh when online), cache fallback for offline.
